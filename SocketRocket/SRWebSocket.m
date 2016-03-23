@@ -97,7 +97,7 @@ static inline void SRFastLog(NSString *format, ...);
 @end
 
 
-@interface _SRRunLoopThread : NSThread
+@interface _DWSRRunLoopThread : NSThread
 
 @property (nonatomic, readonly) NSRunLoop *runLoop;
 
@@ -143,7 +143,7 @@ static NSString *newSHA1String(const char *bytes, size_t length) {
 @end
 
 NSString *const SRWebSocketErrorDomain = @"SRWebSocketErrorDomain";
-NSString *const SRHTTPResponseErrorKey = @"HTTPResponseStatusCode";
+NSString *const DWSRHTTPResponseErrorKey = @"HTTPResponseStatusCode";
 
 // Returns number of bytes consumed. Returning 0 means you didn't match.
 // Sends bytes to callback handler;
@@ -151,7 +151,7 @@ typedef size_t (^stream_scanner)(NSData *collected_data);
 
 typedef void (^data_callback)(SRWebSocket *webSocket,  NSData *data);
 
-@interface SRIOConsumer : NSObject {
+@interface DWSRIOConsumer : NSObject {
     stream_scanner _scanner;
     data_callback _handler;
     size_t _bytesNeeded;
@@ -167,12 +167,12 @@ typedef void (^data_callback)(SRWebSocket *webSocket,  NSData *data);
 @end
 
 // This class is not thread-safe, and is expected to always be run on the same queue.
-@interface SRIOConsumerPool : NSObject
+@interface DWSRIOConsumerPool : NSObject
 
 - (id)initWithBufferCapacity:(NSUInteger)poolSize;
 
-- (SRIOConsumer *)consumerWithScanner:(stream_scanner)scanner handler:(data_callback)handler bytesNeeded:(size_t)bytesNeeded readToCurrentFrame:(BOOL)readToCurrentFrame unmaskBytes:(BOOL)unmaskBytes;
-- (void)returnConsumer:(SRIOConsumer *)consumer;
+- (DWSRIOConsumer *)consumerWithScanner:(stream_scanner)scanner handler:(data_callback)handler bytesNeeded:(size_t)bytesNeeded readToCurrentFrame:(BOOL)readToCurrentFrame unmaskBytes:(BOOL)unmaskBytes;
+- (void)returnConsumer:(DWSRIOConsumer *)consumer;
 
 @end
 
@@ -241,7 +241,7 @@ typedef void (^data_callback)(SRWebSocket *webSocket,  NSData *data);
     __strong SRWebSocket *_selfRetain;
     
     NSArray *_requestedProtocols;
-    SRIOConsumerPool *_consumerPool;
+    DWSRIOConsumerPool *_consumerPool;
 }
 
 @synthesize delegate = _delegate;
@@ -317,7 +317,7 @@ static __strong NSData *CRLFCRLF;
 
     _consumers = [[NSMutableArray alloc] init];
     
-    _consumerPool = [[SRIOConsumerPool alloc] init];
+    _consumerPool = [[DWSRIOConsumerPool alloc] init];
     
     _scheduledRunloops = [[NSMutableSet alloc] init];
     
@@ -419,7 +419,7 @@ static __strong NSData *CRLFCRLF;
     
     if (responseCode >= 400) {
         SRFastLog(@"Request failed with response code %d", responseCode);
-        [self _failWithError:[NSError errorWithDomain:SRWebSocketErrorDomain code:2132 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"received bad response code from server %ld", (long)responseCode], SRHTTPResponseErrorKey:@(responseCode)}]];
+        [self _failWithError:[NSError errorWithDomain:SRWebSocketErrorDomain code:2132 userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"received bad response code from server %ld", (long)responseCode], DWSRHTTPResponseErrorKey:@(responseCode)}]];
         return;
     }
     
@@ -1169,7 +1169,7 @@ static const char CRLFCRLFBytes[] = {'\r', '\n', '\r', '\n'};
         return didWork;
     }
     
-    SRIOConsumer *consumer = [_consumers objectAtIndex:0];
+    DWSRIOConsumer *consumer = [_consumers objectAtIndex:0];
     
     size_t bytesNeeded = consumer.bytesNeeded;
     
@@ -1481,7 +1481,7 @@ static const size_t SRFrameHeaderOverhead = 32;
 @end
 
 
-@implementation SRIOConsumer
+@implementation DWSRIOConsumer
 
 @synthesize bytesNeeded = _bytesNeeded;
 @synthesize consumer = _scanner;
@@ -1503,7 +1503,7 @@ static const size_t SRFrameHeaderOverhead = 32;
 @end
 
 
-@implementation SRIOConsumerPool {
+@implementation DWSRIOConsumerPool {
     NSUInteger _poolSize;
     NSMutableArray *_bufferedConsumers;
 }
@@ -1523,14 +1523,14 @@ static const size_t SRFrameHeaderOverhead = 32;
     return [self initWithBufferCapacity:8];
 }
 
-- (SRIOConsumer *)consumerWithScanner:(stream_scanner)scanner handler:(data_callback)handler bytesNeeded:(size_t)bytesNeeded readToCurrentFrame:(BOOL)readToCurrentFrame unmaskBytes:(BOOL)unmaskBytes;
+- (DWSRIOConsumer *)consumerWithScanner:(stream_scanner)scanner handler:(data_callback)handler bytesNeeded:(size_t)bytesNeeded readToCurrentFrame:(BOOL)readToCurrentFrame unmaskBytes:(BOOL)unmaskBytes;
 {
-    SRIOConsumer *consumer = nil;
+    DWSRIOConsumer *consumer = nil;
     if (_bufferedConsumers.count) {
         consumer = [_bufferedConsumers lastObject];
         [_bufferedConsumers removeLastObject];
     } else {
-        consumer = [[SRIOConsumer alloc] init];
+        consumer = [[DWSRIOConsumer alloc] init];
     }
     
     [consumer setupWithScanner:scanner handler:handler bytesNeeded:bytesNeeded readToCurrentFrame:readToCurrentFrame unmaskBytes:unmaskBytes];
@@ -1538,7 +1538,7 @@ static const size_t SRFrameHeaderOverhead = 32;
     return consumer;
 }
 
-- (void)returnConsumer:(SRIOConsumer *)consumer;
+- (void)returnConsumer:(DWSRIOConsumer *)consumer;
 {
     if (_bufferedConsumers.count < _poolSize) {
         [_bufferedConsumers addObject:consumer];
@@ -1675,7 +1675,7 @@ static inline int32_t validate_dispatch_data_partial_string(NSData *data) {
 
 #endif
 
-static _SRRunLoopThread *networkThread = nil;
+static _DWSRRunLoopThread *networkThread = nil;
 static NSRunLoop *networkRunLoop = nil;
 
 @implementation NSRunLoop (SRWebSocket)
@@ -1683,7 +1683,7 @@ static NSRunLoop *networkRunLoop = nil;
 + (NSRunLoop *)SR_networkRunLoop {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        networkThread = [[_SRRunLoopThread alloc] init];
+        networkThread = [[_DWSRRunLoopThread alloc] init];
         networkThread.name = @"com.squareup.SocketRocket.NetworkThread";
         [networkThread start];
         networkRunLoop = networkThread.runLoop;
@@ -1695,7 +1695,7 @@ static NSRunLoop *networkRunLoop = nil;
 @end
 
 
-@implementation _SRRunLoopThread {
+@implementation _DWSRRunLoopThread {
     dispatch_group_t _waitGroup;
 }
 
